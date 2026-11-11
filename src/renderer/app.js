@@ -55,7 +55,7 @@ const DEFAULTS = {
   settings: {
     theme: 'dark', apiKey: '', model: 'gemini-2.5-flash', trackActivity: true,
     blocklist: ['youtube', 'facebook', 'tiktok', 'netflix', 'reddit', 'instagram'],
-    focusMin: 25, breakMin: 5, focusMusic: '', dayEnd: '23:00', ghUser: 'ashweak', ghToken: ''
+    focusMin: 25, breakMin: 5, focusMusic: '', dayEnd: '23:00', ghUser: 'ashweak', ghToken: '', desktopCar: true
   }
 };
 let S, view = 'dashboard', today = dayKey();
@@ -527,6 +527,7 @@ views.settings = () => {
   <div class="sec">
     <p class="label">02 — tracking & focus</p>
     <label class="row"><button type="button" class="chk ${s.trackActivity ? 'on' : ''}" data-act="toggleTrack"></button> Track active apps in the background</label>
+    <label class="row"><button type="button" class="chk ${s.desktopCar ? 'on' : ''}" data-act="toggleCar"></button> Pixel supercar driving along the bottom of the desktop</label>
     <label class="row">Focus minutes <input class="in" type="number" min="5" max="120" id="setFocus" value="${s.focusMin}" style="width:90px">
       Break minutes <input class="in" type="number" min="1" max="60" id="setBreak" value="${s.breakMin}" style="width:90px"></label>
     <label class="row">Day ends at <input class="in" type="time" id="setDayEnd" value="${s.dayEnd}"> <span class="note">used for the overload warning</span></label>
@@ -610,6 +611,7 @@ Return JSON: {"tasks":[{"title":string,"time":"HH:MM" or "","est":minutes (15-18
   actNext: () => { actDay = addDays(actDay, 1); },
   actToday: () => { actDay = today; },
   toggleTrack: () => { S.settings.trackActivity = !S.settings.trackActivity; },
+  toggleCar: () => { S.settings.desktopCar = !S.settings.desktopCar; bridge.setCar?.(S.settings.desktopCar); },
   saveSettings: () => {
     const s = S.settings;
     s.apiKey = $('#setKey').value.trim(); s.model = $('#setModel').value.trim() || 'gemini-2.5-flash';
@@ -722,6 +724,7 @@ function tick() {
   rollover();
   F.left = S.settings.focusMin * 60;
   bridge.on('quick-add', quickAdd);
+  bridge.on('car-changed', on => { S.settings.desktopCar = on; save(); if (view === 'settings') render(); });
   window.addEventListener('focus', () => { if (S.gh && Date.now() - S.gh.fetchedAt > 2 * 60000) refreshGitHub(true); });
   bridge.on('distraction', hit => toast(`Focus: "${hit}" detected`));
   bridge.on('focus-stop', () => { if (F.running) focusToggle(); toast('Focus session paused'); if (view === 'focus') render(); });
