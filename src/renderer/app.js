@@ -52,11 +52,11 @@ function toast(msg) {
 // ---------- state ----------
 const DEFAULTS = {
   tasks: [], schedules: [], habits: [], focusLog: {}, gh: null,
-  projects: [], repoCache: null, siteCache: {},
+  projects: [], repoCache: null, siteCache: {}, deployCache: {}, notes: [],
   settings: {
     theme: 'dark', apiKey: '', model: 'gemini-2.5-flash', trackActivity: true,
     blocklist: ['youtube', 'facebook', 'tiktok', 'netflix', 'reddit', 'instagram'],
-    focusMin: 25, breakMin: 5, focusMusic: '', dayEnd: '23:00', ghUser: 'ashweak', ghToken: '', desktopCar: true
+    focusMin: 25, breakMin: 5, focusMusic: '', dayEnd: '23:00', ghUser: 'ashweak', ghToken: '', desktopCar: true, backupDir: ''
   }
 };
 let S, view = 'dashboard', today = dayKey();
@@ -175,7 +175,7 @@ function ghStats() {
   while (c(k)) { streak++; k = addDays(k, -1); }
   return { today: c(today), week: lastDays(7).reduce((s, d) => s + c(d), 0), streak, total: S.gh.total ?? Object.values(cal).reduce((a, b) => a + b, 0) };
 }
-const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
+const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
 function heatmap(weeks, levelOf, titleOf) {
   const end = D(today);
   const start = new Date(end); start.setDate(start.getDate() - (weeks - 1) * 7 - end.getDay());
@@ -234,7 +234,18 @@ async function syncProjects(force) {
       S.projects.push({ id: uid(), repo: r.full, name: r.name, status: r.archived ? 'done' : r.homepage ? 'live' : 'building', url: r.homepage || '', progress: null, notes: '', hidden: false, added: Date.now() });
     }
   }
-  save(); checkSites();
+  save(); checkSites(); checkDeploys();
+  if (view === 'projects') render();
+}
+async function checkDeploys(force) {
+  const repos = S.projects.filter(p => !p.hidden && p.repo).map(p => p.repo);
+  await Promise.all(repos.map(async full => {
+    const c = S.deployCache[full];
+    if (!force && c && Date.now() - c.fetched < 20 * 60000) return;
+    const d = await bridge.deploy?.(full, S.settings.ghToken);
+    if (d) S.deployCache[full] = { ...d, fetched: Date.now() };
+  }));
+  save();
   if (view === 'projects') render();
 }
 async function checkSites(force) {
@@ -522,6 +533,9 @@ views.projects = () => {
       <div class="pmeta">
         ${p.url ? `<span class="${site ? (site.up ? 'up' : 'down') : ''}" title="${h(p.url)}">${site ? (site.up ? `● online · ${site.ms}ms` : `○ ${site.error || 'down ' + site.code}`) : '◌ checking…'}</span>` : '<span class="na">no live site</span>'}
         ${r ? `<span class="${stale ? 'warnt' : ''}">pushed ${ago(r.pushed)}${stale ? ' · stale' : ''}</span>` : '<span class="na">no repo</span>'}
+        ${(() => { const d = r && S.deployCache[r.full]; if (!d || d.none) return '';
+          const lbl = d.status !== 'completed' ? ['run', '● running'] : d.conclusion === 'success' ? ['up', '✓ deploy passed'] : d.conclusion === 'cancelled' || d.conclusion === 'skipped' ? ['na', '– ' + d.conclusion] : ['down', '✗ deploy failed'];
+          return `<a class="${lbl[0]} dlink" href="${h(d.url)}" target="_blank" title="${h(d.name)} · ${h(d.branch || '')}">${lbl[1]} · ${ago(d.at)}</a>`; })()}
         ${r?.lang ? `<span>${h(r.lang)}</span>` : ''}
         ${r && r.issues ? `<span>${r.issues} open issue${r.issues > 1 ? 's' : ''}</span>` : ''}
         ${r?.private ? '<span>private</span>' : ''}
@@ -539,6 +553,7 @@ views.projects = () => {
         </form>` : ''}
       <div class="row plinks">
         ${r ? `<a href="${h(r.url)}" target="_blank">repo ↗</a>` : ''}${p.url ? `<a href="${h(p.url)}" target="_blank">site ↗</a>` : ''}
+        <button class="link" data-act="projNotes" data-id="${p.id}">notes${S.notes.filter(n => n.project === p.id).length ? ` (${S.notes.filter(n => n.project === p.id).length})` : ''}</button>
         <button class="link" data-act="projEdit" data-id="${editProj === p.id ? '' : p.id}">edit</button>
       </div>
     </div>`;
@@ -561,6 +576,42 @@ views.projects = () => {
     <p class="label">01 — add a project (not on GitHub)</p>
     <form class="row" data-form="addProject"><input class="in" name="name" placeholder="Project name" autocomplete="off"><input class="in" name="url" placeholder="Live URL (optional)" autocomplete="off"><button class="btn">Add</button></form>
     ${S.projects.some(p => p.hidden) ? `<button class="link" data-act="toggleHidden">${showHidden ? 'hide' : 'show'} hidden projects (${S.projects.filter(p => p.hidden).length})</button>` : ''}
+  </div>`;
+};
+
+let noteSel = null, noteQuery = '';
+const noteTime = n => { const m = Math.round((Date.now() - n.updated) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : fmtShort(dayKey(new Date(n.updated))); };
+const noteMatch = (n, q) => !q || (n.title + ' ' + n.body + ' ' + (projName(n.project) || '')).toLowerCase().includes(q.toLowerCase());
+function noteItem(n) {
+  return `<button class="nitem ${n.id === noteSel ? 'on' : ''}" data-act="noteOpen" data-id="${n.id}" data-search="${h((n.title + ' ' + n.body + ' ' + (projName(n.project) || '')).toLowerCase())}" ${noteMatch(n, noteQuery) ? '' : 'hidden'}>
+    <span class="ntitle">${n.pinned ? '★ ' : ''}<span data-ntitle="${n.id}">${h(n.title || 'Untitled')}</span></span>
+    <span class="nsnip" data-nsnip="${n.id}">${h(n.body.slice(0, 80) || 'Empty note')}</span>
+    <span class="nmeta">${n.project && projName(n.project) ? `<span class="pchip" style="margin:0">${h(projName(n.project))}</span>` : ''}<span data-ntime="${n.id}">${noteTime(n)}</span></span>
+  </button>`;
+}
+views.notes = () => {
+  const list = [...S.notes].sort((a, b) => (b.pinned - a.pinned) || b.updated - a.updated);
+  if (!S.notes.some(n => n.id === noteSel)) noteSel = list[0]?.id || null;
+  const n = S.notes.find(x => x.id === noteSel);
+  return `
+  <div class="phead"><div><h1>NOTES</h1><p>Ideas, snippets and project notes.</p></div><button class="btn pri" data-act="noteNew">+ New note</button></div>
+  <div class="sec notes">
+    <div class="nlist">
+      <input class="in" id="noteSearch" placeholder="Search notes…" value="${h(noteQuery)}" autocomplete="off">
+      ${list.length ? list.map(noteItem).join('') : '<p class="note">No notes yet.</p>'}
+    </div>
+    <div class="neditor">
+      ${n ? `
+      <input class="in ntitlein" id="noteTitle" value="${h(n.title)}" placeholder="Title" autocomplete="off">
+      <textarea class="in nbody" id="noteBody" placeholder="Write anything… links, commands, meeting notes, ideas">${h(n.body)}</textarea>
+      <div class="row" style="justify-content:space-between">
+        <div class="row">
+          <label class="fl">project <select class="in sm" id="noteProject"><option value="">—</option>${S.projects.filter(p => !p.hidden).map(p => `<option value="${p.id}" ${p.id === n.project ? 'selected' : ''}>${h(p.name)}</option>`).join('')}</select></label>
+          <button class="btn sm ${n.pinned ? 'pri' : ''}" data-act="notePin">${n.pinned ? '★ pinned' : '☆ pin'}</button>
+        </div>
+        <div class="row"><span class="note" id="noteSaved">saved · ${noteTime(n)}</span><button class="link" data-act="noteDelete">delete</button></div>
+      </div>` : `<div class="empty"><b>No note selected</b>Create one with “+ New note”.</div>`}
+    </div>
   </div>`;
 };
 
@@ -628,8 +679,9 @@ views.activity = async () => {
   </div>`;
 };
 
-views.settings = () => {
+views.settings = async () => {
   const s = S.settings;
+  const login = await bridge.getLogin?.(), bk = await bridge.backupInfo?.();
   return `
   <div class="phead"><div><h1>SETTINGS</h1><p>Data stays on this computer.</p></div></div>
   <div class="sec">
@@ -640,6 +692,7 @@ views.settings = () => {
   <div class="sec">
     <p class="label">02 — tracking & focus</p>
     <label class="row"><button type="button" class="chk ${s.trackActivity ? 'on' : ''}" data-act="toggleTrack"></button> Track active apps in the background</label>
+    <label class="row"><button type="button" class="chk ${login ? 'on' : ''}" data-act="toggleLogin"></button> Start DAYLOG with Windows (opens in the tray)</label>
     <label class="row"><button type="button" class="chk ${s.desktopCar ? 'on' : ''}" data-act="toggleCar"></button> Pixel supercar driving along the bottom of DAYLOG</label>
     <label class="row">Focus minutes <input class="in" type="number" min="5" max="120" id="setFocus" value="${s.focusMin}" style="width:90px">
       Break minutes <input class="in" type="number" min="1" max="60" id="setBreak" value="${s.breakMin}" style="width:90px"></label>
@@ -651,6 +704,12 @@ views.settings = () => {
     <div class="row"><input class="in" id="setGhUser" value="${h(s.ghUser)}" placeholder="GitHub username"></div>
     <div class="row"><input class="in" type="password" id="setGhToken" value="${h(s.ghToken)}" placeholder="Optional token (classic, scope read:user) — includes private contributions"></div>
     <p class="note" style="margin:0">Your public contribution graph loads with just the username and refreshes every 10 minutes. A token is optional (adds private contributions) and stays on this computer.</p>
+  </div>
+  <div class="sec">
+    <p class="label">04 — backups</p>
+    <p class="note" style="margin:0">A copy of your data is saved automatically once a day (last 14 kept). Keys and tokens are left out.</p>
+    <div class="row"><span class="chip" title="${h(bk?.dir || '')}">${h(bk?.dir || 'desktop app only')}</span>${bk ? `<span class="note">${bk.count} backup${bk.count === 1 ? '' : 's'}${bk.last ? ' · latest ' + h(bk.last.slice(7, 17)) : ''}</span>` : ''}</div>
+    <div class="row"><button class="btn sm" data-act="backupNow">Back up now</button><button class="btn sm" data-act="backupPick">Change folder</button><button class="btn sm" data-act="backupOpen">Open folder</button></div>
   </div>
   <div class="sec">
     <div class="row"><button class="btn pri" data-act="saveSettings">Save settings</button><button class="btn" data-act="export">Export JSON</button></div>
@@ -688,7 +747,7 @@ const actions = {
   },
   wd: (_d, el) => el.classList.toggle('pri'),
   calPick: ({ day }) => { calSel = day; },
-  projSync: async () => { const p = syncProjects(true); checkSites(true); await render(); await p; },
+  projSync: async () => { const p = syncProjects(true); checkSites(true); checkDeploys(true); await render(); await p; },
   projEdit: ({ id }) => { editProj = id || null; },
   projHide: ({ id }) => { const p = S.projects.find(x => x.id === id); p.hidden = !p.hidden; editProj = null; },
   projDelete: async ({ id }) => {
@@ -697,6 +756,23 @@ const actions = {
     S.projects = S.projects.filter(x => x.id !== id); S.tasks.forEach(t => { if (t.project === id) t.project = ''; }); editProj = null;
   },
   toggleHidden: () => { showHidden = !showHidden; },
+  projNotes: ({ id }) => {
+    const n = S.notes.filter(x => x.project === id).sort((a, b) => b.updated - a.updated)[0];
+    if (n) noteSel = n.id; else { const nn = { id: uid(), title: '', body: '', project: id, pinned: false, updated: Date.now() }; S.notes.push(nn); noteSel = nn.id; }
+    noteQuery = ''; view = 'notes';
+  },
+  noteNew: () => { const n = { id: uid(), title: '', body: '', project: '', pinned: false, updated: Date.now() }; S.notes.push(n); noteSel = n.id; noteQuery = ''; },
+  noteOpen: ({ id }) => { noteSel = id; },
+  notePin: () => { const n = S.notes.find(x => x.id === noteSel); n.pinned = !n.pinned; },
+  noteDelete: async () => {
+    const n = S.notes.find(x => x.id === noteSel);
+    if (!(await confirmBox(`Delete "${n.title || 'Untitled'}"?`, 'This cannot be undone.', 'Delete'))) return 'cancel';
+    S.notes = S.notes.filter(x => x.id !== noteSel); noteSel = null;
+  },
+  toggleLogin: async () => { const on = await bridge.setLogin?.(!(await bridge.getLogin?.())); toast(on ? 'DAYLOG will start with Windows' : 'Start with Windows turned off'); },
+  backupNow: async () => { const r = await bridge.backupRun?.(); toast(r?.ok ? 'Backup saved' : `Backup failed: ${r?.error || 'desktop app only'}`); },
+  backupPick: async () => { const d = await bridge.backupPick?.(); if (d) { S.settings.backupDir = d; save(); await new Promise(r => setTimeout(r, 300)); toast('Backup folder set'); } },
+  backupOpen: () => bridge.backupOpen?.(),
   calPrev: () => { const [y, m] = calMonth.split('-').map(Number); calMonth = dayKey(new Date(y, m - 2, 1)).slice(0, 7); },
   calNext: () => { const [y, m] = calMonth.split('-').map(Number); calMonth = dayKey(new Date(y, m, 1)).slice(0, 7); },
   calToday: () => { calMonth = today.slice(0, 7); calSel = today; },
@@ -816,8 +892,25 @@ document.addEventListener('click', async e => {
   }
 });
 
+// Notes: autosave while typing (no re-render so the cursor stays put)
+document.addEventListener('input', e => {
+  if (e.target.id === 'noteSearch') {
+    noteQuery = e.target.value;
+    document.querySelectorAll('.nitem').forEach(el => { el.hidden = !!noteQuery && !el.dataset.search.includes(noteQuery.toLowerCase()); });
+    return;
+  }
+  if (e.target.id !== 'noteTitle' && e.target.id !== 'noteBody') return;
+  const n = S.notes.find(x => x.id === noteSel); if (!n) return;
+  if (e.target.id === 'noteTitle') { n.title = e.target.value; const t = $(`[data-ntitle="${n.id}"]`); if (t) t.textContent = n.title || 'Untitled'; }
+  else { n.body = e.target.value; const sn = $(`[data-nsnip="${n.id}"]`); if (sn) sn.textContent = n.body.slice(0, 80) || 'Empty note'; }
+  n.updated = Date.now(); save();
+  const sv = $('#noteSaved'); if (sv) sv.textContent = 'saved · just now';
+  const tm = $(`[data-ntime="${n.id}"]`); if (tm) tm.textContent = 'just now';
+});
+
 // Show/hide "until" and weekday pickers based on the repeat choice
 document.addEventListener('change', e => {
+  if (e.target.id === 'noteProject') { const n = S.notes.find(x => x.id === noteSel); n.project = e.target.value; n.updated = Date.now(); save(); render(); return; }
   if (e.target.dataset.projStatus) { const p = S.projects.find(x => x.id === e.target.dataset.projStatus); p.status = e.target.value; save(); render(); return; }
   if (e.target.name !== 'repeat') return;
   const f = e.target.form, r = e.target.value;
@@ -846,18 +939,18 @@ function applyTheme() {
   $('#themeBtn span').textContent = light ? 'Dark mode' : 'Light mode';
 }
 
-// Keyboard: N = new task, 1-8 = switch views
-const ORDER = ['dashboard', 'today', 'schedule', 'projects', 'habits', 'focus', 'activity', 'settings'];
+// Keyboard: N = new task, 1-9 = switch views
+const ORDER = ['dashboard', 'today', 'schedule', 'projects', 'notes', 'habits', 'focus', 'activity', 'settings'];
 document.addEventListener('keydown', e => {
   if (e.target.matches('input,textarea,select')) return;
   if (e.key === 'n') { e.preventDefault(); quickAdd(); }
-  if (/^[1-8]$/.test(e.key)) { view = ORDER[+e.key - 1]; render(); }
+  if (/^[1-9]$/.test(e.key)) { view = ORDER[+e.key - 1]; render(); }
 });
 async function quickAdd() { view = 'today'; await render(); $('[data-form="addTask"] input[name=title]').focus(); }
 
 // ---------- background checks (every 30s) ----------
 function tick() {
-  refreshGitHub(); syncProjects(); checkSites();
+  refreshGitHub(); syncProjects(); checkSites(); checkDeploys();
   if (dayKey() !== today) { rollover(); render(); }
   const now = mins(nowHM());
   for (const t of tasksOn(today)) {

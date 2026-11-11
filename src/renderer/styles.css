@@ -232,3 +232,17 @@ select.in.sm{flex:0 0 auto}
 /* Stats grid: wraps cleanly at any width (lines drawn per cell, outer edge clipped) */
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-top:1px solid var(--line);overflow:hidden}
 .scell{display:flex;flex-direction:column;gap:4px;padding:16px 16px 16px 0;box-shadow:1px 0 0 var(--line),0 1px 0 var(--line);padding-left:16px}
+
+/* Notes */
+.notes{display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:start}
+.nlist{display:flex;flex-direction:column;gap:6px;position:sticky;top:12px;max-height:calc(100vh - 160px);overflow-y:auto;padding-right:4px}
+.nitem{display:flex;flex-direction:column;gap:2px;text-align:left;background:var(--card);border:1px solid var(--line1);border-radius:6px;padding:8px 10px;cursor:pointer;color:var(--text)}
+.nitem:hover{border-color:var(--line3)}.nitem.on{border-color:var(--hi);box-shadow:0 0 14px var(--glow)}
+.ntitle{color:var(--hi);font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nsnip{color:var(--mute);font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nmeta{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--dim)}
+.neditor{display:flex;flex-direction:column;gap:10px;min-width:0}
+.ntitlein{font-size:24px;padding:8px 12px;width:100%}
+textarea.in.nbody{min-height:52vh;width:100%;line-height:1.35;font-size:18px;resize:vertical}
+.pmeta .run{color:#e3b341}.dlink{text-decoration:none}.dlink:hover{text-decoration:underline}
+@media (max-width:860px){.notes{grid-template-columns:1fr}.nlist{position:static;max-height:240px}textarea.in.nbody{min-height:40vh}}

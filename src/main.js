@@ -1,5 +1,5 @@
 // DAYLOG — main process: window, tray, hotkey, storage, activity tracking, AI calls.
-const { app, shell, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, Notification, powerMonitor, nativeImage } = require('electron');
+const { app, shell, dialog, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, Notification, powerMonitor, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -174,6 +174,36 @@ async function fetchRepos(user, token) {
     issues: x.open_issues_count, stars: x.stargazers_count, homepage: x.homepage || '', url: x.html_url, archived: x.archived, private: x.private
   }));
 }
+// Latest GitHub Actions run (CI / Pages deploy) for a repo
+async function fetchDeploy(full, token) {
+  const headers = { 'User-Agent': 'daylog', Accept: 'application/vnd.github+json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const r = await fetch(`https://api.github.com/repos/${full}/actions/runs?per_page=1`, { headers });
+  if (!r.ok) return { none: true, code: r.status };
+  const run = (await r.json()).workflow_runs?.[0];
+  if (!run) return { none: true };
+  return { name: run.name, status: run.status, conclusion: run.conclusion, at: run.updated_at, url: run.html_url, branch: run.head_branch };
+}
+
+// ---------- backups ----------
+const BACKUP_KEEP = 14;
+function defaultBackupDir() { return fs.existsSync('D:\\') ? 'D:\\DAYLOG Backups' : path.join(app.getPath('documents'), 'DAYLOG Backups'); }
+function backupDir() { return (readJSON(DATA_FILE, {}).settings || {}).backupDir || defaultBackupDir(); }
+function runBackup(force) {
+  const dir = backupDir(), stamp = new Date().toISOString().slice(0, 10);
+  const target = path.join(dir, `daylog-${stamp}.json`);
+  if (!force && fs.existsSync(target)) return { ok: true, skipped: true, path: target };
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const data = readJSON(DATA_FILE, {});
+    if (data.settings) data.settings = { ...data.settings, apiKey: '', ghToken: '' };
+    writeJSON(target, { exportedAt: new Date().toISOString(), data, activity });
+    const old = fs.readdirSync(dir).filter(f => /^daylog-\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().slice(0, -BACKUP_KEEP);
+    old.forEach(f => fs.unlinkSync(path.join(dir, f)));
+    return { ok: true, path: target, at: Date.now() };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
 // Is a live site up? (status + response time)
 async function checkSite(url) {
   const t0 = Date.now();
@@ -189,11 +219,13 @@ function createWindow() {
     width: 1120, height: 760, minWidth: 760, minHeight: 520,
     backgroundColor: '#0a0a0a',
     title: 'DAYLOG',
+    show: false,
     icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.once('ready-to-show', () => { if (!process.argv.includes('--hidden') && !app.getLoginItemSettings().wasOpenedAsHidden) win.show(); });
   // Links with target=_blank open in the default browser
   win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.on('close', e => { if (!quitting) { e.preventDefault(); win.hide(); } });
@@ -233,6 +265,21 @@ ipcMain.handle('github:repos', async (_e, user, token) => {
   try { return { ok: true, data: await fetchRepos(user, token) }; } catch (e) { return { ok: false, error: e.message }; }
 });
 ipcMain.handle('site:check', (_e, url) => /^https?:\/\//i.test(url) ? checkSite(url) : { up: false, code: 0, error: 'bad url' });
+ipcMain.handle('github:deploy', async (_e, full, token) => { try { return await fetchDeploy(full, token); } catch { return { none: true }; } });
+ipcMain.handle('login:get', () => app.getLoginItemSettings().openAtLogin);
+ipcMain.handle('login:set', (_e, on) => { app.setLoginItemSettings({ openAtLogin: !!on, args: ['--hidden'] }); return app.getLoginItemSettings().openAtLogin; });
+ipcMain.handle('backup:run', () => runBackup(true));
+ipcMain.handle('backup:info', () => {
+  const dir = backupDir();
+  let files = [];
+  try { files = fs.readdirSync(dir).filter(f => f.startsWith('daylog-')).sort(); } catch {}
+  return { dir, count: files.length, last: files.at(-1) || null };
+});
+ipcMain.handle('backup:pick', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Choose backup folder', properties: ['openDirectory', 'createDirectory'] });
+  return r.canceled ? null : r.filePaths[0];
+});
+ipcMain.handle('backup:open', () => { const d = backupDir(); fs.mkdirSync(d, { recursive: true }); shell.openPath(d); return true; });
 ipcMain.handle('github:fetch', async (_e, user, token) => {
   try { return { ok: true, data: await fetchGitHub(user, token) }; }
   catch (e) { return { ok: false, error: e.message }; }
@@ -254,6 +301,8 @@ app.whenReady().then(async () => {
   await loadTracker();
   setInterval(pollActivity, POLL_MS);
   setInterval(() => writeJSON(ACT_FILE, activity), 30000);
+  setTimeout(() => runBackup(false), 15000);
+  setInterval(() => runBackup(false), 3 * 3600000);
 });
 
 app.on('before-quit', () => { quitting = true; writeJSON(ACT_FILE, activity); });
