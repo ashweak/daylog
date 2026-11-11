@@ -1,0 +1,31 @@
+{
+  "name": "daylog",
+  "version": "1.0.0",
+  "description": "Personal daily task tracker with activity tracking, habits, focus mode and an AI day planner.",
+  "main": "src/main.js",
+  "author": "Lance Agua",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.lanceagua.daylog",
+    "productName": "DAYLOG",
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    }
+  },
+  "optionalDependencies": {
+    "get-windows": "^9.2.0"
+  }
+}
