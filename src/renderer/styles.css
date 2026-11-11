@@ -127,23 +127,6 @@ select.in,input[type=time].in,input[type=number].in{flex:0 0 auto;min-width:0}
 .warn{font-weight:400;color:var(--top);background:var(--line);padding:0 4px}
 .mdl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-/* Timeline */
-.tl-wrap{display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:start}
-.tl-side{position:sticky;top:12px;display:flex;flex-direction:column;gap:10px}
-.tl-pool{min-height:120px;display:flex;flex-direction:column;gap:8px;padding:8px;border:1px dashed var(--line);border-radius:8px}
-.tl-card,.tl-block{background:var(--card);border:1px solid var(--line3);border-radius:4px;padding:4px 8px;color:var(--hi);font-size:16px;line-height:1.1;cursor:grab;overflow:hidden}
-.tl-card small,.tl-block small{display:block;color:var(--mute);font-size:14px}
-.tl-card:hover,.tl-block:hover{border-color:var(--hi);box-shadow:0 0 18px var(--glow)}
-.dragging{opacity:.4}
-.tl-grid{position:relative;border-top:1px solid var(--line)}
-.tl-hour{position:absolute;left:0;right:0;height:48px;border-bottom:1px solid var(--line1)}
-.tl-hour span{position:absolute;left:0;top:2px;font-size:14px;color:var(--dim)}
-.tl-block{position:absolute;left:56px;right:0;z-index:2}
-.tl-block.hiP{border-left:4px solid var(--hi)}
-.tl-block.cls{cursor:default;z-index:1;background:var(--raise);border-style:dashed;border-color:var(--line3);background-image:repeating-linear-gradient(135deg,transparent 0 6px,var(--line1) 6px 8px)}
-.tl-now{position:absolute;left:48px;right:0;height:2px;background:var(--hi);z-index:3}
-.tl-now::before{content:"";position:absolute;left:-6px;top:-3px;width:8px;height:8px;background:var(--hi)}
-
 /* Progress */
 .heat{display:grid;grid-template-rows:repeat(7,11px);grid-auto-flow:column;grid-auto-columns:11px;gap:3px;overflow-x:auto;padding-bottom:4px}
 .heat i,.key{display:inline-block;width:11px;height:11px;background:var(--raise)}
@@ -152,4 +135,32 @@ select.in,input[type=time].in,input[type=number].in{flex:0 0 auto;min-width:0}
 .hm2{background:color-mix(in srgb,var(--hi) 55%,var(--raise))!important}
 .hm3{background:color-mix(in srgb,var(--hi) 80%,var(--raise))!important}
 .hm4{background:var(--hi)!important}
-@media (max-width:900px){.tl-wrap{grid-template-columns:1fr}.tl-side{position:static}}
+
+/* ---- v5: dashboard + schedule ---- */
+.stats.s5{grid-template-columns:repeat(5,minmax(0,1fr))}
+.list.flat{border-top:0}.list.flat .item:last-child{border-bottom:0}
+.item.flat{border-bottom:1px solid var(--line)}
+.chk.ghost{border-style:dashed;cursor:default}
+.chip.warnc{background:var(--hi);color:var(--bg)}
+.dgroup{display:flex;gap:18px;border-top:1px solid var(--line)}
+.dlabel{flex:0 0 96px;padding-top:10px;color:var(--hi);display:flex;flex-direction:column}
+.dlabel small{color:var(--dim);font-size:14px}
+.ghs{gap:18px;font-size:16px;color:var(--mute);margin-bottom:10px}.ghs b{font-weight:400;color:var(--hi);font-size:20px}
+.cols.sm{height:120px}
+.addf{display:flex;flex-direction:column;gap:10px}
+.fl{display:flex;align-items:center;gap:6px;font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+.fl .in{font-size:17px;letter-spacing:0;text-transform:none;padding:4px 8px}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.chead{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);padding:0 6px 4px}
+.cday{min-height:92px;background:var(--card);border:1px solid var(--line1);border-radius:6px;padding:5px 6px;text-align:left;display:flex;flex-direction:column;gap:2px;cursor:pointer;color:var(--text);overflow:hidden}
+.cday:hover{border-color:var(--line3)}
+.cday.pad{background:none;border:0;cursor:default}
+.cday.past{opacity:.55}
+.cday.today .cnum{background:var(--hi);color:var(--bg);padding:0 5px}
+.cday.sel{border-color:var(--hi);box-shadow:0 0 18px var(--glow)}
+.cnum{font-size:16px;color:var(--hi);align-self:flex-start;margin-bottom:2px}
+.cit{font-size:14px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--raise);padding:0 4px;border-radius:2px}
+.cit.hiP{border-left:3px solid var(--hi)}
+.cit.done{text-decoration:line-through;color:var(--dim)}
+.cmore{font-size:13px;color:var(--mute)}
+@media (max-width:900px){.stats.s5{grid-template-columns:repeat(2,1fr)}}
