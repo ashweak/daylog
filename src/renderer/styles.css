@@ -187,3 +187,33 @@ select.in,input[type=time].in,input[type=number].in{flex:0 0 auto;min-width:0}
 /* Car lane along the bottom of the app */
 .carlane{position:fixed;left:221px;right:0;bottom:0;height:34px;width:calc(100% - 221px);pointer-events:none;z-index:5;image-rendering:pixelated}
 main{padding-bottom:80px}
+
+/* ---- collapsible sidebar (small windows) ---- */
+.menu-btn{display:none}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:39}
+@media (max-width:860px){
+  aside{position:fixed;top:0;left:0;bottom:0;width:240px;z-index:40;transform:translateX(-100%);transition:transform .25s steps(5);box-shadow:none}
+  aside.open{transform:none;box-shadow:0 0 40px rgba(0,0,0,.5)}
+  .side{padding-top:64px}
+  .menu-btn{display:grid;place-items:center;position:fixed;top:10px;left:10px;z-index:41;width:40px;height:40px;padding:0;border:1px solid var(--line1);border-radius:6px;background:var(--side);color:var(--hi);cursor:pointer}
+  .menu-btn:hover{border-color:var(--line3)}
+  .menu-btn svg{width:18px;height:18px}
+  main{padding:56px 20px 80px}
+  .phead{padding-top:12px}
+  .carlane{left:0;width:100%}
+  .stats,.stats.s5{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .scell:nth-child(odd){border-left:0;padding-left:0}
+  .scell{border-top:1px solid var(--line)}
+  .scell:nth-child(-n+2){border-top:0}
+  .stats.s5 .scell:last-child{grid-column:1/-1}
+  .grid2{grid-template-columns:1fr}
+  .dgroup{flex-direction:column;gap:0}
+  .dlabel{flex:none;flex-direction:row;gap:8px;align-items:baseline}
+  .cday{min-height:64px}.cit{font-size:12px}
+}
+@media (max-width:520px){
+  .cit{display:none}
+  .cday{min-height:44px}
+  .cday:has(.cit)::after{content:"•";color:var(--hi);font-size:18px;line-height:1}
+  .hb{grid-template-columns:90px 1fr 56px}
+}

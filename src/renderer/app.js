@@ -661,9 +661,19 @@ const forms = {
   addBlock: f => { const b = f.elements.block.value.trim().toLowerCase(); if (b && !S.settings.blocklist.includes(b)) S.settings.blocklist.push(b); return true; }
 };
 
+// Collapsible sidebar on small windows
+const setMenu = open => {
+  $('#aside').classList.toggle('open', open); $('#scrim').hidden = !open;
+  $('#menuBtn').setAttribute('aria-expanded', open); $('#menuBtn').setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+};
+$('#menuBtn').addEventListener('click', () => setMenu(!$('#aside').classList.contains('open')));
+$('#scrim').addEventListener('click', () => setMenu(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#aside').classList.contains('open')) setMenu(false); });
+window.addEventListener('resize', () => { if (innerWidth > 860) setMenu(false); });
+
 document.addEventListener('click', async e => {
   const nav = e.target.closest('.nav a');
-  if (nav) { view = nav.dataset.view; return render(); }
+  if (nav) { view = nav.dataset.view; setMenu(false); return render(); }
   const el = e.target.closest('[data-act]');
   if (!el) return;
   e.preventDefault();
