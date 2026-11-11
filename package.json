@@ -7,11 +7,10 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "npx --yes electron-builder@25 --win"
   },
   "devDependencies": {
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "electron": "^33.2.0"
   },
   "build": {
     "appId": "com.lanceagua.daylog",
