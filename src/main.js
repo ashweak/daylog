@@ -92,22 +92,48 @@ async function askGemini(prompt) {
 }
 
 // ---------- GitHub ----------
+// Parses https://github.com/users/<user>/contributions (the public graph HTML)
+function parseContribPage(html) {
+  const attr = (tag, name) => (tag.match(new RegExp(`\\s${name}="([^"]*)"`)) || [])[1];
+  const tips = {};
+  for (const m of html.matchAll(/<tool-tip\b([^>]*)>([\s\S]*?)<\/tool-tip>/g)) {
+    const f = attr(m[1], 'for'); if (!f) continue;
+    const text = m[2].replace(/<[^>]+>/g, '').trim();
+    tips[f] = /^no contributions/i.test(text) ? 0 : parseInt(text.replace(/,/g, ''), 10) || 0;
+  }
+  const calendar = {}, levels = {};
+  for (const m of html.matchAll(/<td\b[^>]*ContributionCalendar-day[^>]*>/g)) {
+    const date = attr(m[0], 'data-date'); if (!date) continue;
+    const lvl = +attr(m[0], 'data-level') || 0, id = attr(m[0], 'id');
+    levels[date] = lvl;
+    calendar[date] = id in tips ? tips[id] : (+attr(m[0], 'data-count') || (lvl ? 1 : 0));
+  }
+  if (!Object.keys(calendar).length) throw new Error('Could not read the GitHub contribution graph');
+  const tm = html.replace(/<[^>]+>/g, ' ').match(/([\d,]+)\s+contributions?\s+in\s+the\s+last\s+year/i);
+  const total = tm ? +tm[1].replace(/,/g, '') : Object.values(calendar).reduce((a, b) => a + b, 0);
+  return { calendar, levels, total };
+}
+
 async function fetchGitHub(user, token) {
   if (!user) throw new Error('Set your GitHub username in Settings.');
   const headers = { 'User-Agent': 'daylog', Accept: 'application/vnd.github+json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const out = { calendar: null, total: null, events: [] };
+  const out = { calendar: null, levels: null, total: null, events: [] };
 
-  // Contribution calendar (GraphQL needs a token)
+  // Contribution calendar: GraphQL with a token, otherwise the public profile graph (no token needed)
   if (token) {
-    const query = `query($login:String!){user(login:$login){contributionsCollection{contributionCalendar{totalContributions weeks{contributionDays{date contributionCount}}}}}}`;
+    const query = `query($login:String!){user(login:$login){contributionsCollection{contributionCalendar{totalContributions weeks{contributionDays{date contributionCount contributionLevel}}}}}}`;
     const r = await fetch('https://api.github.com/graphql', { method: 'POST', headers, body: JSON.stringify({ query, variables: { login: user } }) });
     const j = await r.json();
     if (!r.ok || j.errors) throw new Error(j.errors?.[0]?.message || j.message || `GitHub error ${r.status}`);
     const cal = j.data.user.contributionsCollection.contributionCalendar;
-    out.total = cal.totalContributions;
-    out.calendar = {};
-    for (const w of cal.weeks) for (const d of w.contributionDays) out.calendar[d.date] = d.contributionCount;
+    const LV = { NONE: 0, FIRST_QUARTILE: 1, SECOND_QUARTILE: 2, THIRD_QUARTILE: 3, FOURTH_QUARTILE: 4 };
+    out.total = cal.totalContributions; out.calendar = {}; out.levels = {};
+    for (const w of cal.weeks) for (const d of w.contributionDays) { out.calendar[d.date] = d.contributionCount; out.levels[d.date] = LV[d.contributionLevel] ?? 0; }
+  } else {
+    const r = await fetch(`https://github.com/users/${encodeURIComponent(user)}/contributions`, { headers: { 'User-Agent': 'Mozilla/5.0 daylog' } });
+    if (!r.ok) throw new Error(r.status === 404 ? `GitHub user "${user}" not found` : `GitHub error ${r.status}`);
+    Object.assign(out, parseContribPage(await r.text()));
   }
 
   // Recent public pushes (works without a token, 60 req/hour)
@@ -200,3 +226,5 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => { quitting = true; writeJSON(ACT_FILE, activity); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', e => e.preventDefault());
+
+if (process.env.DAYLOG_TEST) module.exports = { parseContribPage };

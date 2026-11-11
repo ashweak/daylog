@@ -155,7 +155,7 @@ let ghBusy = false, ghError = '';
 async function refreshGitHub(force) {
   const s = S.settings;
   if (!s.ghUser || ghBusy) return;
-  if (!force && S.gh && S.gh.user === s.ghUser && Date.now() - S.gh.fetchedAt < 30 * 60000) return;
+  if (!force && S.gh && S.gh.user === s.ghUser && Date.now() - S.gh.fetchedAt < 10 * 60000) return;
   ghBusy = true;
   const res = await bridge.github(s.ghUser, s.ghToken);
   ghBusy = false;
@@ -184,6 +184,27 @@ function heatmap(weeks, levelOf, titleOf) {
     cells.push(`<i class="hm${levelOf(key)}" title="${titleOf(key)}"></i>`);
   }
   return `<div class="heat">${cells.join('')}</div>`;
+}
+
+// GitHub-style contribution graph (53 weeks, month + weekday labels)
+function ghGraph() {
+  const cal = S.gh?.calendar || {}, lv = S.gh?.levels || {};
+  const end = D(today), start = new Date(end); start.setDate(start.getDate() - 52 * 7 - end.getDay());
+  const max = Math.max(1, ...Object.values(cal));
+  const level = k => k in lv ? lv[k] : !cal[k] ? 0 : Math.min(4, Math.ceil(cal[k] / max * 4));
+  const parts = [], months = [];
+  let col = 0, lastMonth = -1;
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const k = dayKey(d), dow = d.getDay();
+    if (dow === 0 && d.getMonth() !== lastMonth) { if (col < 52) months.push(`<span class="gm" style="grid-column:${col + 2}">${d.toLocaleDateString(undefined, { month: 'short' })}</span>`); lastMonth = d.getMonth(); }
+    const n = cal[k] || 0;
+    parts.push(`<i class="g${level(k)}" style="grid-column:${col + 2};grid-row:${dow + 2}" title="${n ? n : 'No'} contribution${n === 1 ? '' : 's'} on ${fmtShort(k)}"></i>`);
+    if (dow === 6) col++;
+  }
+  const dl = [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([r, l]) => `<span class="gd" style="grid-row:${r + 2}">${l}</span>`).join('');
+  return `<div class="ghwrap"><div class="ghg">${months.join('')}${dl}${parts.join('')}</div></div>
+    <div class="row note" style="justify-content:space-between;margin-top:6px"><span>${S.gh ? `synced ${ago(new Date(S.gh.fetchedAt).toISOString())} · updates automatically` : ''}</span>
+    <span class="glegend">Less <i class="g0"></i><i class="g1"></i><i class="g2"></i><i class="g3"></i><i class="g4"></i> More</span></div>`;
 }
 
 const isDistraction = name => S.settings.blocklist.some(b => b && name.toLowerCase().includes(b.toLowerCase()));
@@ -339,17 +360,22 @@ views.dashboard = async () => {
     </div>
   </div>
 
+  <div class="sec">
+    <div class="row" style="justify-content:space-between"><p class="label">02 — github · ${h(S.settings.ghUser || 'not set')}</p><button class="link" data-act="ghRefresh">${ghBusy ? 'syncing…' : '↻ refresh'}</button></div>
+    ${g ? `<h3 class="ghtitle">${g.total} contributions in the last year</h3>
+      <div class="row ghs"><span><b>${g.today}</b> today</span><span><b>${g.week}</b> this week</span><span><b>${g.streak}d</b> streak</span></div>
+      ${ghGraph()}`
+      : `<div class="empty"><b>${ghBusy ? 'Syncing with GitHub…' : 'GitHub not synced yet'}</b>${ghError ? h(ghError) : S.settings.ghUser ? 'It loads automatically when you are online.' : 'Set your GitHub username in Settings.'}</div>`}
+  </div>
+
   <div class="sec grid2">
     <div class="card">
       <div class="row" style="justify-content:space-between"><p class="label">top apps today</p><button class="link" data-act="go" data-view="activity">activity →</button></div>
       ${apps.length ? `<div class="hbars">${apps.slice(0, 5).map(([n, v]) => `<div class="hb ${isDistraction(n) ? 'bad' : ''}"><span>${h(n)}</span><span class="track"><i style="width:${v / apps[0][1] * 100}%"></i></span><span>${dur(v)}</span></div>`).join('')}</div>` : '<p class="note">No activity recorded yet.</p>'}
     </div>
     <div class="card">
-      <div class="row" style="justify-content:space-between"><p class="label">github · ${h(S.settings.ghUser || 'not set')}</p><button class="link" data-act="ghRefresh">${ghBusy ? 'syncing…' : '↻'}</button></div>
-      ${g ? `<div class="row ghs"><span><b>${g.today}</b> today</span><span><b>${g.week}</b> this week</span><span><b>${g.streak}d</b> streak</span><span><b>${g.total}</b> this year</span></div>
-        ${heatmap(20, k => glvl(cal[k] || 0), k => `${k}: ${cal[k] || 0} contributions`)}`
-        : `<p class="note">${ghError ? h(ghError) : S.settings.ghToken ? 'Syncing…' : 'Add a GitHub token in Settings to see your contributions.'}</p>`}
-      ${(S.gh?.events || []).slice(0, 3).map(e => `<div class="row" style="justify-content:space-between;font-size:16px"><span>${h(e.repo.split('/').pop())}${e.msg ? ` <span class="meta">— ${h(e.msg).slice(0, 48)}</span>` : ''}</span><span class="meta">${ago(e.at)}</span></div>`).join('')}
+      <p class="label">recent github activity</p>
+      ${(S.gh?.events || []).length ? (S.gh.events).slice(0, 5).map(e => `<div class="row" style="justify-content:space-between;font-size:16px;flex-wrap:nowrap"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h(e.repo.split('/').pop())}${e.msg ? ` <span class="meta">— ${h(e.msg)}</span>` : ''}</span><span class="meta">${ago(e.at)}</span></div>`).join('') : '<p class="note">No recent public pushes.</p>'}
     </div>
   </div>`;
 };
@@ -509,8 +535,8 @@ views.settings = () => {
   <div class="sec">
     <p class="label">03 — github</p>
     <div class="row"><input class="in" id="setGhUser" value="${h(s.ghUser)}" placeholder="GitHub username"></div>
-    <div class="row"><input class="in" type="password" id="setGhToken" value="${h(s.ghToken)}" placeholder="GitHub token (github.com/settings/tokens — classic, scope: read:user)"></div>
-    <p class="note" style="margin:0">The token is needed for the contribution graph and stays on this computer.</p>
+    <div class="row"><input class="in" type="password" id="setGhToken" value="${h(s.ghToken)}" placeholder="Optional token (classic, scope read:user) — includes private contributions"></div>
+    <p class="note" style="margin:0">Your public contribution graph loads with just the username and refreshes every 10 minutes. A token is optional (adds private contributions) and stays on this computer.</p>
   </div>
   <div class="sec">
     <div class="row"><button class="btn pri" data-act="saveSettings">Save settings</button><button class="btn" data-act="export">Export JSON</button></div>
@@ -696,6 +722,7 @@ function tick() {
   rollover();
   F.left = S.settings.focusMin * 60;
   bridge.on('quick-add', quickAdd);
+  window.addEventListener('focus', () => { if (S.gh && Date.now() - S.gh.fetchedAt > 2 * 60000) refreshGitHub(true); });
   bridge.on('distraction', hit => toast(`Focus: "${hit}" detected`));
   bridge.on('focus-stop', () => { if (F.running) focusToggle(); toast('Focus session paused'); if (view === 'focus') render(); });
   await render();

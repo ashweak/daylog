@@ -171,3 +171,14 @@ select.in,input[type=time].in,input[type=number].in{flex:0 0 auto;min-width:0}
 .mbox{width:min(440px,90vw);background:var(--card);border:1px solid var(--line3);border-radius:8px;padding:22px;display:flex;flex-direction:column;gap:10px;box-shadow:0 0 40px var(--glow)}
 .mbox h3{margin:0;font-weight:400;font-size:22px;color:var(--hi);overflow-wrap:anywhere}
 .mbox .note{margin:0}
+
+/* GitHub graph */
+.ghtitle{margin:0;font-weight:400;font-size:20px;color:var(--hi)}
+.ghwrap{overflow-x:auto;border:1px solid var(--line1);border-radius:8px;padding:12px 14px;background:var(--card)}
+.ghg{display:grid;grid-template-columns:30px repeat(53,11px);grid-template-rows:16px repeat(7,11px);gap:3px;width:max-content}
+.gm{grid-row:1;font-size:14px;color:var(--soft);white-space:nowrap;overflow:visible;width:0}
+.gd{grid-column:1;font-size:13px;color:var(--soft);line-height:11px}
+.ghg i,.glegend i{display:block;width:11px;height:11px;border-radius:2px}
+.glegend{display:flex;align-items:center;gap:3px}.glegend i{display:inline-block}
+.g0{background:#161b22;outline:1px solid rgba(255,255,255,.05);outline-offset:-1px}.g1{background:#0e4429}.g2{background:#006d32}.g3{background:#26a641}.g4{background:#39d353}
+.tk.light .g0{background:#ebedf0}.tk.light .g1{background:#9be9a8}.tk.light .g2{background:#40c463}.tk.light .g3{background:#30a14e}.tk.light .g4{background:#216e39}
