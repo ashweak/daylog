@@ -46,9 +46,6 @@ main{flex:1;overflow:auto;padding:0 48px 60px}
 .label{margin:0;font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:400}
 
 /* Stats row (portfolio style) */
-.stats{border-top:1px solid var(--line);border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
-.scell{display:flex;flex-direction:column;gap:4px;padding:16px;border-left:1px solid var(--line)}
-.scell:first-child{border-left:0;padding-left:0}
 .snum{font-size:30px;line-height:1;color:var(--hi)}
 .snum i{font-style:normal;font-size:14px;color:var(--dim);margin-left:4px}
 .scell small{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
@@ -121,7 +118,7 @@ select.in,input[type=time].in,input[type=number].in{flex:0 0 auto;min-width:0}
 .ai-out{white-space:pre-wrap;color:var(--text);line-height:1.35}
 .toast{position:fixed;right:20px;bottom:20px;background:var(--hi);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:17px;z-index:50}
 .note{font-size:15px;color:var(--dim)}
-@media (max-width:900px){main{padding:0 22px 40px}.stats{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}}
+@media (max-width:900px){main{padding:0 22px 80px}.grid2{grid-template-columns:1fr}}
 
 /* ---- round 2 ---- */
 .warn{font-weight:400;color:var(--top);background:var(--line);padding:0 4px}
@@ -137,7 +134,6 @@ select.in,input[type=time].in,input[type=number].in{flex:0 0 auto;min-width:0}
 .hm4{background:var(--hi)!important}
 
 /* ---- v5: dashboard + schedule ---- */
-.stats.s5{grid-template-columns:repeat(5,minmax(0,1fr))}
 .list.flat{border-top:0}.list.flat .item:last-child{border-bottom:0}
 .item.flat{border-bottom:1px solid var(--line)}
 .chk.ghost{border-style:dashed;cursor:default}
@@ -163,7 +159,6 @@ select.in,input[type=time].in,input[type=number].in{flex:0 0 auto;min-width:0}
 .cit.hiP{border-left:3px solid var(--hi)}
 .cit.done{text-decoration:line-through;color:var(--dim)}
 .cmore{font-size:13px;color:var(--mute)}
-@media (max-width:900px){.stats.s5{grid-template-columns:repeat(2,1fr)}}
 
 /* Confirm dialog */
 .modal{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.6);display:grid;place-items:center}
@@ -201,11 +196,6 @@ main{padding-bottom:80px}
   main{padding:56px 20px 80px}
   .phead{padding-top:12px}
   .carlane{left:0;width:100%}
-  .stats,.stats.s5{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .scell:nth-child(odd){border-left:0;padding-left:0}
-  .scell{border-top:1px solid var(--line)}
-  .scell:nth-child(-n+2){border-top:0}
-  .stats.s5 .scell:last-child{grid-column:1/-1}
   .grid2{grid-template-columns:1fr}
   .dgroup{flex-direction:column;gap:0}
   .dlabel{flex:none;flex-direction:row;gap:8px;align-items:baseline}
@@ -217,3 +207,28 @@ main{padding-bottom:80px}
   .cday:has(.cit)::after{content:"•";color:var(--hi);font-size:18px;line-height:1}
   .hb{grid-template-columns:90px 1fr 56px}
 }
+
+/* Projects */
+.pgrid{align-items:start}
+.pcard{display:flex;flex-direction:column;gap:10px}
+.pcard.dim{opacity:.5}
+.pname{margin:0;font-weight:400;font-size:21px;color:var(--hi);overflow-wrap:anywhere}
+.pdesc{margin:0;color:var(--soft);font-size:16px;line-height:1.25}
+.pprog{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--mute)}.pprog .bar{flex:1}
+.pmeta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:15px;color:var(--mute)}
+.pmeta .up{color:#39d353}.pmeta .down{color:#ff6b6b}.pmeta .na{color:var(--dim)}.pmeta .warnt{color:var(--top)}
+.tk.light .pmeta .up{color:#1a7f37}.tk.light .pmeta .down{color:#cf222e}
+.pnext{font-size:16px;color:var(--hi);border-top:1px solid var(--line);padding-top:8px}
+.pnext .label{margin-right:6px}
+.plinks{gap:16px;font-size:16px}.plinks a{color:var(--text);text-decoration:none}.plinks a:hover{color:var(--top)}
+.in.sm{padding:2px 8px;font-size:16px}
+select.in.sm{flex:0 0 auto}
+.st-live{border-color:#26a641!important;color:#39d353}.st-done{color:var(--mute)}.st-paused{color:var(--dim)}
+.tk.light .st-live{color:#1a7f37}
+.pedit{display:flex;flex-direction:column;gap:8px;border:1px dashed var(--line);border-radius:6px;padding:10px}
+.pedit .fl{flex-wrap:wrap}.pedit .fl .in{flex:1}
+.pchip{font-size:13px;color:var(--mute);border:1px solid var(--line);padding:0 5px;border-radius:3px;margin-left:6px;white-space:nowrap}
+
+/* Stats grid: wraps cleanly at any width (lines drawn per cell, outer edge clipped) */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-top:1px solid var(--line);overflow:hidden}
+.scell{display:flex;flex-direction:column;gap:4px;padding:16px 16px 16px 0;box-shadow:1px 0 0 var(--line),0 1px 0 var(--line);padding-left:16px}

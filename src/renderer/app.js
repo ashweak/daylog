@@ -52,6 +52,7 @@ function toast(msg) {
 // ---------- state ----------
 const DEFAULTS = {
   tasks: [], schedules: [], habits: [], focusLog: {}, gh: null,
+  projects: [], repoCache: null, siteCache: {},
   settings: {
     theme: 'dark', apiKey: '', model: 'gemini-2.5-flash', trackActivity: true,
     blocklist: ['youtube', 'facebook', 'tiktok', 'netflix', 'reddit', 'instagram'],
@@ -104,7 +105,7 @@ function itemsOn(key) {
   const real = S.tasks.filter(t => t.date === key);
   if (key <= today) return real;
   const virt = S.schedules.filter(s => matches(s, key) && !real.some(t => t.schedId === s.id))
-    .map(s => ({ id: 'v-' + s.id, title: s.title, date: key, time: s.time, priority: s.priority, est: s.est, schedId: s.id, virtual: true }));
+    .map(s => ({ id: 'v-' + s.id, title: s.title, date: key, time: s.time, priority: s.priority, est: s.est, schedId: s.id, project: s.project, virtual: true }));
   return [...real, ...virt];
 }
 
@@ -115,7 +116,7 @@ function rollover() {
   }
   for (const s of S.schedules) {
     if (matches(s, today) && !S.tasks.some(t => t.schedId === s.id && t.date === today)) {
-      S.tasks.push({ id: uid(), title: s.title, date: today, done: false, schedId: s.id, time: s.time || '', est: s.est || 0, priority: s.priority || 'normal', createdAt: Date.now() });
+      S.tasks.push({ id: uid(), title: s.title, date: today, done: false, schedId: s.id, time: s.time || '', est: s.est || 0, priority: s.priority || 'normal', project: s.project || '', createdAt: Date.now() });
     }
   }
   save();
@@ -214,6 +215,47 @@ function ghGraph() {
     <span class="glegend">Less <i class="g0"></i><i class="g1"></i><i class="g2"></i><i class="g3"></i><i class="g4"></i> More</span></div>`;
 }
 
+// ---------- projects ----------
+const STATUSES = ['planning', 'building', 'testing', 'live', 'paused', 'done'];
+let repoBusy = false, repoError = '', showHidden = false, editProj = null;
+const repoOf = p => p.repo ? (S.repoCache?.list || []).find(r => r.full === p.repo) : null;
+async function syncProjects(force) {
+  const s = S.settings;
+  if (!s.ghUser || repoBusy) return;
+  if (!force && S.repoCache && Date.now() - S.repoCache.at < 10 * 60000) return;
+  repoBusy = true;
+  const res = await bridge.repos?.(s.ghUser, s.ghToken);
+  repoBusy = false;
+  if (!res || !res.ok) { repoError = res?.error || 'Could not load repos'; return; }
+  repoError = '';
+  S.repoCache = { list: res.data, at: Date.now() };
+  for (const r of res.data) {
+    if (!S.projects.some(p => p.repo === r.full)) {
+      S.projects.push({ id: uid(), repo: r.full, name: r.name, status: r.archived ? 'done' : r.homepage ? 'live' : 'building', url: r.homepage || '', progress: null, notes: '', hidden: false, added: Date.now() });
+    }
+  }
+  save(); checkSites();
+  if (view === 'projects') render();
+}
+async function checkSites(force) {
+  const urls = [...new Set(S.projects.filter(p => !p.hidden && p.url).map(p => p.url))];
+  await Promise.all(urls.map(async u => {
+    const c = S.siteCache[u];
+    if (!force && c && Date.now() - c.at < 10 * 60000) return;
+    const r = await bridge.checkSite?.(u); if (r) S.siteCache[u] = r;
+  }));
+  save();
+  if (view === 'projects') render();
+}
+function projStats(p) {
+  const tasks = S.tasks.filter(t => t.project === p.id);
+  const done = tasks.filter(t => t.done).length;
+  const next = tasks.filter(t => !t.done).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)[0];
+  const pct = tasks.length ? Math.round(done / tasks.length * 100) : (p.progress ?? (p.status === 'done' || p.status === 'live' ? 100 : null));
+  return { total: tasks.length, done, next, pct, open: tasks.length - done };
+}
+const projName = id => S.projects.find(p => p.id === id)?.name;
+
 const isDistraction = name => S.settings.blocklist.some(b => b && name.toLowerCase().includes(b.toLowerCase()));
 
 // ---------- focus timer (runs regardless of view) ----------
@@ -278,6 +320,7 @@ function addForm(date = today) {
       <label class="fl">time <input class="in" type="time" name="time"></label>
       <label class="fl">est <select class="in" name="est">${estOpts()}</select></label>
       <label class="fl">priority <select class="in" name="priority"><option value="normal">normal</option><option value="high">high</option></select></label>
+      ${S.projects.some(p => !p.hidden) ? `<label class="fl">project <select class="in" name="project"><option value="">—</option>${S.projects.filter(p => !p.hidden).map(p => `<option value="${p.id}">${h(p.name)}</option>`).join('')}</select></label>` : ''}
     </div>
     <div class="row wdays" hidden>${DAYS.map((d, i) => `<button type="button" class="btn sm ${i === dow ? 'pri' : ''}" data-act="wd" data-i="${i}">${d}</button>`).join('')}<span class="note">repeat on these days</span></div>
   </form>`;
@@ -287,7 +330,7 @@ function taskRow(t, opts = {}) {
   const late = t.from && !t.done ? daysBetween(t.from, today) : 0;
   return `<li class="item ${t.done ? 'done' : ''}">
     ${t.virtual ? '<span class="chk ghost" title="Scheduled — appears on its day"></span>' : `<button class="chk ${t.done ? 'on' : ''}" data-act="toggleTask" data-id="${t.id}" aria-label="Toggle done"></button>`}
-    <span class="t">${h(t.title)}</span>
+    <span class="t">${h(t.title)}${t.project && projName(t.project) && !opts.noProject ? ` <span class="pchip">${h(projName(t.project))}</span>` : ''}</span>
     ${opts.showDate ? `<span class="meta">${relDay(t.date)}</span>` : ''}
     ${t.est ? `<span class="meta">~${dur(t.est * 60)}</span>` : ''}
     ${t.time ? `<span class="chip">${t.time}</span>` : ''}
@@ -458,6 +501,69 @@ views.schedule = () => {
   </div>`;
 };
 
+views.projects = () => {
+  const list = S.projects.filter(p => showHidden || !p.hidden);
+  const order = p => STATUSES.indexOf(p.status) === 5 ? 9 : p.status === 'paused' ? 8 : 0;
+  const sorted = [...list].sort((a, b) => order(a) - order(b) || (repoOf(b)?.pushed || '').localeCompare(repoOf(a)?.pushed || '') || a.name.localeCompare(b.name));
+  const visible = S.projects.filter(p => !p.hidden);
+  const sites = visible.filter(p => p.url), up = sites.filter(p => S.siteCache[p.url]?.up).length;
+  const count = st => visible.filter(p => p.status === st).length;
+  const card = p => {
+    const r = repoOf(p), st = projStats(p), site = p.url ? S.siteCache[p.url] : null;
+    const pushedDays = r ? Math.floor((Date.now() - new Date(r.pushed)) / 864e5) : null;
+    const stale = pushedDays != null && pushedDays > 30 && !['done', 'paused'].includes(p.status);
+    return `<div class="card pcard ${p.hidden ? 'dim' : ''}">
+      <div class="row" style="justify-content:space-between;flex-wrap:nowrap">
+        <h3 class="pname">${h(p.name)}</h3>
+        <select class="in sm st-${p.status}" data-proj-status="${p.id}">${STATUSES.map(x => `<option ${x === p.status ? 'selected' : ''}>${x}</option>`).join('')}</select>
+      </div>
+      ${r?.desc || p.notes ? `<p class="pdesc">${h(p.notes || r.desc)}</p>` : ''}
+      <div class="pprog"><div class="bar"><i style="width:${st.pct ?? 0}%"></i></div><span>${st.pct == null ? 'no tasks yet' : `${st.pct}%${st.total ? ` · ${st.done}/${st.total} tasks` : ''}`}</span></div>
+      <div class="pmeta">
+        ${p.url ? `<span class="${site ? (site.up ? 'up' : 'down') : ''}" title="${h(p.url)}">${site ? (site.up ? `● online · ${site.ms}ms` : `○ ${site.error || 'down ' + site.code}`) : '◌ checking…'}</span>` : '<span class="na">no live site</span>'}
+        ${r ? `<span class="${stale ? 'warnt' : ''}">pushed ${ago(r.pushed)}${stale ? ' · stale' : ''}</span>` : '<span class="na">no repo</span>'}
+        ${r?.lang ? `<span>${h(r.lang)}</span>` : ''}
+        ${r && r.issues ? `<span>${r.issues} open issue${r.issues > 1 ? 's' : ''}</span>` : ''}
+        ${r?.private ? '<span>private</span>' : ''}
+      </div>
+      <div class="pnext">${st.next ? `<span class="label">next</span> ${h(st.next.title)} <span class="meta">· ${relDay(st.next.date)}</span>` : '<span class="note">No open tasks.</span>'}</div>
+      <form class="row" data-form="projTask" data-id="${p.id}"><input class="in sm" name="title" placeholder="Add a task to ${h(p.name)}…" autocomplete="off"><button class="btn sm">Add</button></form>
+      ${editProj === p.id ? `
+        <form class="pedit" data-form="projEdit" data-id="${p.id}">
+          <label class="fl">name <input class="in" name="name" value="${h(p.name)}"></label>
+          <label class="fl">live url <input class="in" name="url" value="${h(p.url)}" placeholder="https://…"></label>
+          <label class="fl">progress % <input class="in" type="number" min="0" max="100" name="progress" value="${p.progress ?? ''}" placeholder="auto from tasks" style="width:130px"></label>
+          <label class="fl">notes <input class="in" name="notes" value="${h(p.notes)}" placeholder="Short note (replaces repo description)"></label>
+          <div class="row"><button class="btn pri sm">Save</button><button type="button" class="link" data-act="projEdit" data-id="">cancel</button>
+          ${p.repo ? `<button type="button" class="link" data-act="projHide" data-id="${p.id}">${p.hidden ? 'unhide' : 'hide from list'}</button>` : `<button type="button" class="link" data-act="projDelete" data-id="${p.id}">delete</button>`}</div>
+        </form>` : ''}
+      <div class="row plinks">
+        ${r ? `<a href="${h(r.url)}" target="_blank">repo ↗</a>` : ''}${p.url ? `<a href="${h(p.url)}" target="_blank">site ↗</a>` : ''}
+        <button class="link" data-act="projEdit" data-id="${editProj === p.id ? '' : p.id}">edit</button>
+      </div>
+    </div>`;
+  };
+  return `
+  <div class="phead"><div><h1>PROJECTS</h1><p>Status of everything you're building.</p></div>
+    <div class="row"><button class="link" data-act="projSync">${repoBusy ? 'syncing…' : '↻ sync'}</button></div></div>
+  <div class="sec"><div class="stats s5">
+    <div class="scell"><span class="snum">${visible.length}</span><small>projects</small></div>
+    <div class="scell"><span class="snum">${count('building') + count('testing') + count('planning')}</span><small>in progress</small></div>
+    <div class="scell"><span class="snum">${count('live')}</span><small>live</small></div>
+    <div class="scell"><span class="snum">${count('done')}</span><small>done</small></div>
+    <div class="scell"><span class="snum">${up}<i>/${sites.length}</i></span><small>sites online</small></div>
+  </div></div>
+  ${repoError ? `<p class="note">GitHub: ${h(repoError)}</p>` : ''}
+  <div class="sec">
+    ${sorted.length ? `<div class="grid2 pgrid">${sorted.map(card).join('')}</div>` : `<div class="empty"><b>${repoBusy ? 'Loading your GitHub repos…' : 'No projects yet'}</b>Your GitHub repos are added automatically. You can also add one below.</div>`}
+  </div>
+  <div class="sec">
+    <p class="label">01 — add a project (not on GitHub)</p>
+    <form class="row" data-form="addProject"><input class="in" name="name" placeholder="Project name" autocomplete="off"><input class="in" name="url" placeholder="Live URL (optional)" autocomplete="off"><button class="btn">Add</button></form>
+    ${S.projects.some(p => p.hidden) ? `<button class="link" data-act="toggleHidden">${showHidden ? 'hide' : 'show'} hidden projects (${S.projects.filter(p => p.hidden).length})</button>` : ''}
+  </div>`;
+};
+
 views.habits = () => {
   const days = lastDays(14);
   return `
@@ -582,6 +688,15 @@ const actions = {
   },
   wd: (_d, el) => el.classList.toggle('pri'),
   calPick: ({ day }) => { calSel = day; },
+  projSync: async () => { const p = syncProjects(true); checkSites(true); await render(); await p; },
+  projEdit: ({ id }) => { editProj = id || null; },
+  projHide: ({ id }) => { const p = S.projects.find(x => x.id === id); p.hidden = !p.hidden; editProj = null; },
+  projDelete: async ({ id }) => {
+    const p = S.projects.find(x => x.id === id);
+    if (!(await confirmBox(`Delete "${p.name}"?`, 'Its tasks are kept but unlinked.', 'Delete'))) return 'cancel';
+    S.projects = S.projects.filter(x => x.id !== id); S.tasks.forEach(t => { if (t.project === id) t.project = ''; }); editProj = null;
+  },
+  toggleHidden: () => { showHidden = !showHidden; },
   calPrev: () => { const [y, m] = calMonth.split('-').map(Number); calMonth = dayKey(new Date(y, m - 2, 1)).slice(0, 7); },
   calNext: () => { const [y, m] = calMonth.split('-').map(Number); calMonth = dayKey(new Date(y, m, 1)).slice(0, 7); },
   calToday: () => { calMonth = today.slice(0, 7); calSel = today; },
@@ -642,7 +757,7 @@ const forms = {
   addTask: f => {
     const v = n => f.elements[n].value.trim();
     const title = v('title'); if (!title) return toast('Write a task first');
-    const date = v('date') || today, repeat = v('repeat'), base = { title, time: v('time'), est: +v('est') || 0, priority: v('priority') };
+    const date = v('date') || today, repeat = v('repeat'), base = { title, time: v('time'), est: +v('est') || 0, priority: v('priority'), project: f.elements.project?.value || '' };
     if (repeat === 'once') {
       S.tasks.push({ id: uid(), ...base, date, done: false, createdAt: Date.now() });
       if (date !== today) toast(`Added for ${relDay(date)}`);
@@ -656,6 +771,22 @@ const forms = {
       toast(`Repeats ${repeatLabel(s)}`);
     }
     return true;
+  },
+  projTask: f => {
+    const title = f.elements.title.value.trim(); if (!title) return;
+    S.tasks.push({ id: uid(), title, date: today, done: false, time: '', est: 0, priority: 'normal', project: f.dataset.id, createdAt: Date.now() });
+    toast('Task added for today'); return true;
+  },
+  projEdit: f => {
+    const p = S.projects.find(x => x.id === f.dataset.id), e = f.elements;
+    p.name = e.name.value.trim() || p.name; p.url = e.url.value.trim(); p.notes = e.notes.value.trim();
+    p.progress = e.progress.value === '' ? null : Math.max(0, Math.min(100, +e.progress.value));
+    editProj = null; checkSites(true); return true;
+  },
+  addProject: f => {
+    const name = f.elements.name.value.trim(); if (!name) return toast('Name the project');
+    S.projects.push({ id: uid(), repo: '', name, status: 'planning', url: f.elements.url.value.trim(), progress: null, notes: '', hidden: false, added: Date.now() });
+    checkSites(true); return true;
   },
   addHabit: f => { const name = f.elements.name.value.trim(); if (name) S.habits.push({ id: uid(), name, log: {} }); return true; },
   addBlock: f => { const b = f.elements.block.value.trim().toLowerCase(); if (b && !S.settings.blocklist.includes(b)) S.settings.blocklist.push(b); return true; }
@@ -687,6 +818,7 @@ document.addEventListener('click', async e => {
 
 // Show/hide "until" and weekday pickers based on the repeat choice
 document.addEventListener('change', e => {
+  if (e.target.dataset.projStatus) { const p = S.projects.find(x => x.id === e.target.dataset.projStatus); p.status = e.target.value; save(); render(); return; }
   if (e.target.name !== 'repeat') return;
   const f = e.target.form, r = e.target.value;
   f.querySelector('.until').hidden = r === 'once';
@@ -714,18 +846,18 @@ function applyTheme() {
   $('#themeBtn span').textContent = light ? 'Dark mode' : 'Light mode';
 }
 
-// Keyboard: N = new task, 1-7 = switch views
-const ORDER = ['dashboard', 'today', 'schedule', 'habits', 'focus', 'activity', 'settings'];
+// Keyboard: N = new task, 1-8 = switch views
+const ORDER = ['dashboard', 'today', 'schedule', 'projects', 'habits', 'focus', 'activity', 'settings'];
 document.addEventListener('keydown', e => {
   if (e.target.matches('input,textarea,select')) return;
   if (e.key === 'n') { e.preventDefault(); quickAdd(); }
-  if (/^[1-7]$/.test(e.key)) { view = ORDER[+e.key - 1]; render(); }
+  if (/^[1-8]$/.test(e.key)) { view = ORDER[+e.key - 1]; render(); }
 });
 async function quickAdd() { view = 'today'; await render(); $('[data-form="addTask"] input[name=title]').focus(); }
 
 // ---------- background checks (every 30s) ----------
 function tick() {
-  refreshGitHub();
+  refreshGitHub(); syncProjects(); checkSites();
   if (dayKey() !== today) { rollover(); render(); }
   const now = mins(nowHM());
   for (const t of tasksOn(today)) {

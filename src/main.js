@@ -160,6 +160,29 @@ async function fetchGitHub(user, token) {
   return out;
 }
 
+// Public repos for the Projects tab
+async function fetchRepos(user, token) {
+  const headers = { 'User-Agent': 'daylog', Accept: 'application/vnd.github+json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const url = token ? 'https://api.github.com/user/repos?per_page=100&sort=pushed&affiliation=owner'
+                    : `https://api.github.com/users/${encodeURIComponent(user)}/repos?per_page=100&sort=pushed`;
+  const r = await fetch(url, { headers });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.message || `GitHub error ${r.status}`);
+  return j.filter(x => !x.fork).map(x => ({
+    full: x.full_name, name: x.name, desc: x.description || '', lang: x.language || '', pushed: x.pushed_at,
+    issues: x.open_issues_count, stars: x.stargazers_count, homepage: x.homepage || '', url: x.html_url, archived: x.archived, private: x.private
+  }));
+}
+// Is a live site up? (status + response time)
+async function checkSite(url) {
+  const t0 = Date.now();
+  try {
+    const r = await fetch(url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'daylog-status' } });
+    return { up: r.status < 500, code: r.status, ms: Date.now() - t0, at: Date.now() };
+  } catch (e) { return { up: false, code: 0, ms: Date.now() - t0, at: Date.now(), error: e.name === 'TimeoutError' ? 'timeout' : 'unreachable' }; }
+}
+
 // ---------- window / tray ----------
 function createWindow() {
   win = new BrowserWindow({
@@ -171,6 +194,8 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Links with target=_blank open in the default browser
+  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
   win.on('close', e => { if (!quitting) { e.preventDefault(); win.hide(); } });
 }
 
@@ -204,6 +229,10 @@ ipcMain.handle('open:external', (_e, url) => {
   if (/^(https:|spotify:)/i.test(url)) shell.openExternal(url);
   return true;
 });
+ipcMain.handle('github:repos', async (_e, user, token) => {
+  try { return { ok: true, data: await fetchRepos(user, token) }; } catch (e) { return { ok: false, error: e.message }; }
+});
+ipcMain.handle('site:check', (_e, url) => /^https?:\/\//i.test(url) ? checkSite(url) : { up: false, code: 0, error: 'bad url' });
 ipcMain.handle('github:fetch', async (_e, user, token) => {
   try { return { ok: true, data: await fetchGitHub(user, token) }; }
   catch (e) { return { ok: false, error: e.message }; }
