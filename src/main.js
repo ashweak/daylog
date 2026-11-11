@@ -10,7 +10,7 @@ const POLL_MS = 5000;
 const IDLE_SECONDS = 120;
 
 let win, tray, quitting = false;
-let focusActive = false, lastNudge = 0;
+let focusActive = false, lastNudge = 0, warnWin = null;
 
 // ---------- storage ----------
 function readJSON(file, fallback) {
@@ -49,12 +49,27 @@ async function pollActivity() {
   if (focusActive) {
     const hay = `${name} ${w.title || ''}`.toLowerCase();
     const hit = (s.blocklist || []).find(b => b && hay.includes(b.toLowerCase()));
-    if (hit && Date.now() - lastNudge > 60000) {
+    if (hit && !(warnWin && warnWin.isVisible()) && Date.now() - lastNudge > 30000) {
       lastNudge = Date.now();
-      new Notification({ title: 'Focus mode', body: `"${hit}" detected. Back to work.` }).show();
+      showWarning(hit, name, s.theme === 'light');
       win && win.webContents.send('distraction', hit);
     }
   }
+}
+
+// ---------- focus warning overlay ----------
+function showWarning(hit, appName, light) {
+  if (!warnWin || warnWin.isDestroyed()) {
+    warnWin = new BrowserWindow({
+      width: 480, height: 300, frame: false, resizable: false, minimizable: false, maximizable: false,
+      skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: light ? '#f4f4f2' : '#0a0a0a',
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false }
+    });
+    warnWin.setAlwaysOnTop(true, 'screen-saver');
+    warnWin.on('closed', () => { warnWin = null; });
+  }
+  warnWin.loadFile(path.join(__dirname, 'renderer', 'warning.html'), { query: { hit, app: appName, light: light ? '1' : '' } });
+  warnWin.once('ready-to-show', () => { warnWin.center(); warnWin.show(); warnWin.focus(); });
 }
 
 // ---------- AI (Gemini) ----------
@@ -148,6 +163,12 @@ ipcMain.handle('data:load', () => readJSON(DATA_FILE, null));
 ipcMain.handle('data:save', (_e, data) => { writeJSON(DATA_FILE, data); return true; });
 ipcMain.handle('activity:range', (_e, keys) => Object.fromEntries(keys.map(k => [k, activity[k] || { apps: {}, idle: 0 }])));
 ipcMain.handle('focus:set', (_e, on) => { focusActive = !!on; return focusActive; });
+ipcMain.handle('warn:action', (_e, action) => {
+  if (warnWin && !warnWin.isDestroyed()) warnWin.hide();
+  lastNudge = Date.now();
+  if (action === 'stop' && win) win.webContents.send('focus-stop');
+  return true;
+});
 ipcMain.handle('notify', (_e, title, body) => { new Notification({ title, body }).show(); return true; });
 ipcMain.handle('open:external', (_e, url) => {
   if (/^(https:|spotify:)/i.test(url)) shell.openExternal(url);

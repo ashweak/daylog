@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self' 'unsafe-inline'">
+<title>Focus warning</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  html,body{height:100%;overflow:hidden;user-select:none}
+  .warnbox{height:100vh;display:flex;flex-direction:column;justify-content:center;gap:14px;padding:26px 30px;border:2px solid var(--hi);background:var(--bg)}
+  .wtitle{font-family:'Press Start 2P',monospace;font-size:15px;color:var(--hi);line-height:1.6;display:flex;align-items:center;gap:12px}
+  .wtitle span{display:inline-block;background:var(--hi);color:var(--bg);padding:6px 9px;animation:blink 1s steps(1) infinite}
+  .wmsg{margin:0;color:var(--text);font-size:20px;line-height:1.25}
+  .wmsg b{font-weight:400;color:var(--top);background:var(--line);padding:0 5px}
+  .wsub{margin:0;color:var(--mute);font-size:16px}
+  .row{margin-top:6px}
+</style>
+</head>
+<body>
+<div class="tk" id="root" style="height:100vh">
+  <div class="warnbox">
+    <div class="wtitle"><span>!</span>FOCUS MODE</div>
+    <p class="wmsg">You opened <b id="hit"></b> during a focus session.</p>
+    <p class="wsub" id="app"></p>
+    <div class="row">
+      <button class="btn pri" id="back" autofocus>Back to work</button>
+      <button class="btn" id="stop">End focus session</button>
+    </div>
+  </div>
+</div>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.getElementById('hit').textContent = q.get('hit') || 'a blocked app';
+  document.getElementById('app').textContent = q.get('app') ? `Active app: ${q.get('app')} · this warning comes back every 30s while it stays open.` : '';
+  if (q.get('light')) document.getElementById('root').classList.add('light');
+  const act = a => window.api && window.api.warnAction(a);
+  document.getElementById('back').onclick = () => act('dismiss');
+  document.getElementById('stop').onclick = () => act('stop');
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') act('dismiss'); });
+</script>
+</body>
+</html>

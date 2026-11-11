@@ -8,8 +8,9 @@ contextBridge.exposeInMainWorld('api', {
   notify: (title, body) => ipcRenderer.invoke('notify', title, body),
   openExternal: url => ipcRenderer.invoke('open:external', url),
   github: (user, token) => ipcRenderer.invoke('github:fetch', user, token),
+  warnAction: action => ipcRenderer.invoke('warn:action', action),
   ai: prompt => ipcRenderer.invoke('ai:ask', prompt),
   on: (channel, fn) => {
-    if (['quick-add', 'distraction'].includes(channel)) ipcRenderer.on(channel, (_e, ...a) => fn(...a));
+    if (['quick-add', 'distraction', 'focus-stop'].includes(channel)) ipcRenderer.on(channel, (_e, ...a) => fn(...a));
   }
 });

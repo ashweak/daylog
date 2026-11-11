@@ -37,8 +37,20 @@
     </div>
   </aside>
   <main id="main"></main>
-</div>
 <div class="toast" id="toast" hidden></div>
+<div class="modal" id="modal" hidden>
+  <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <p class="label" id="mLabel">confirm</p>
+    <h3 id="mTitle"></h3>
+    <p class="note" id="mBody"></p>
+    <div class="row" style="justify-content:flex-end">
+      <button class="btn" data-m="no">Cancel</button>
+      <button class="btn pri" data-m="yes" id="mYes">Mark as done</button>
+    </div>
+  </div>
+</div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

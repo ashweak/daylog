@@ -31,6 +31,19 @@ const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const daysBetween = (a, b) => Math.round((D(b) - D(a)) / 864e5);
 const relDay = key => { const n = daysBetween(today, key); return n === 0 ? 'today' : n === 1 ? 'tomorrow' : n === -1 ? 'yesterday' : n < 0 ? `${-n}d ago` : n < 7 ? short(key) : fmtShort(key); };
 
+// Styled confirm dialog → resolves true/false
+function confirmBox(title, body = '', yes = 'Confirm') {
+  const m = $('#modal');
+  $('#mTitle').textContent = title; $('#mBody').textContent = body; $('#mYes').textContent = yes;
+  m.hidden = false; $('#mYes').focus();
+  return new Promise(res => {
+    const done = v => { m.hidden = true; m.onclick = null; document.removeEventListener('keydown', key, true); res(v); };
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(false); } if (e.key === 'Enter') { e.preventDefault(); done(true); } };
+    m.onclick = e => { const b = e.target.closest('[data-m]'); if (b) done(b.dataset.m === 'yes'); else if (e.target === m) done(false); };
+    document.addEventListener('keydown', key, true);
+  });
+}
+
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => (t.hidden = true), 2600);
@@ -519,7 +532,12 @@ const NO_RENDER = ['focusToggle', 'focusSkip', 'focusReset', 'wd'];
 
 const actions = {
   go: ({ view: v }) => { view = v; },
-  toggleTask: ({ id }) => { const t = find(id); t.done = !t.done; t.doneAt = t.done ? Date.now() : null; },
+  toggleTask: async ({ id }) => {
+    const t = find(id);
+    if (!t.done && !(await confirmBox(`Mark "${t.title}" as done?`, 'You can undo this by clicking the checkbox again.', 'Mark as done'))) return 'cancel';
+    t.done = !t.done; t.doneAt = t.done ? Date.now() : null;
+    if (t.done) toast('Task completed ✓');
+  },
   delTask: ({ id }) => { S.tasks = S.tasks.filter(t => t.id !== id); },
   tomorrow: ({ id }) => { const t = find(id); t.from ||= t.date; t.date = addDays(today, 1); toast('Moved to tomorrow'); },
   allTomorrow: () => { tasksOn(today).filter(t => !t.done && !t.schedId).forEach(t => { t.from ||= t.date; t.date = addDays(today, 1); }); toast('Moved to tomorrow'); },
@@ -614,7 +632,7 @@ document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   e.preventDefault();
-  await actions[el.dataset.act]?.(el.dataset, el);
+  if ((await actions[el.dataset.act]?.(el.dataset, el)) === 'cancel') return;
   save();
   if (!NO_RENDER.includes(el.dataset.act)) {
     await render();
@@ -679,6 +697,7 @@ function tick() {
   F.left = S.settings.focusMin * 60;
   bridge.on('quick-add', quickAdd);
   bridge.on('distraction', hit => toast(`Focus: "${hit}" detected`));
+  bridge.on('focus-stop', () => { if (F.running) focusToggle(); toast('Focus session paused'); if (view === 'focus') render(); });
   await render();
   setInterval(tick, 30000); tick();
 })();

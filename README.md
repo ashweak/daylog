@@ -8,7 +8,8 @@ A personal desktop app for planning, tracking and reviewing your day. Built with
 - **Schedule calendar**: month view of every task and repeat, click a day to see or add tasks
 - **Today**: task list with reminder time, estimate, priority, overload warning, carry-over of unfinished tasks, AI day planner (Gemini)
 - **Habits**: 14-day grid with streaks
-- **Focus**: Pomodoro, distraction alerts, optional focus music link
+- **Focus**: Pomodoro; opening a blocked app shows an always-on-top warning window; optional focus music link
+- **Confirm on complete**: a dialog asks before a task is marked done
 - **Activity**: tracks which app is active (idle excluded)
 - Tray icon, global quick add (`Ctrl+Shift+Space`), task reminders, dark/light theme
 - All data is local (`%APPDATA%/daylog/data.json` and `activity.json`)
