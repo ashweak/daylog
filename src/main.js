@@ -1,5 +1,5 @@
 // DAYLOG — main process: window, tray, hotkey, storage, activity tracking, AI calls.
-const { app, shell, screen, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, Notification, powerMonitor, nativeImage } = require('electron');
+const { app, shell, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, Notification, powerMonitor, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -10,7 +10,7 @@ const POLL_MS = 5000;
 const IDLE_SECONDS = 120;
 
 let win, tray, quitting = false;
-let focusActive = false, lastNudge = 0, warnWin = null, carWin = null;
+let focusActive = false, lastNudge = 0, warnWin = null;
 
 // ---------- storage ----------
 function readJSON(file, fallback) {
@@ -57,28 +57,10 @@ async function pollActivity() {
   }
 }
 
-// ---------- desktop car (click-through overlay above the taskbar) ----------
-function setCar(on) {
-  if (!on) { if (carWin && !carWin.isDestroyed()) carWin.close(); carWin = null; return; }
-  if (carWin && !carWin.isDestroyed()) return;
-  const wa = screen.getPrimaryDisplay().workArea, h = 70;
-  carWin = new BrowserWindow({
-    x: wa.x, y: wa.y + wa.height - h, width: wa.width, height: h,
-    frame: false, transparent: true, backgroundColor: '#00000000', resizable: false, movable: false,
-    focusable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false }
-  });
-  carWin.setIgnoreMouseEvents(true);
-  carWin.setAlwaysOnTop(true, 'floating');
-  carWin.loadFile(path.join(__dirname, 'renderer', 'car.html'));
-  carWin.on('closed', () => { carWin = null; });
-}
-function carEnabled() { return (readJSON(DATA_FILE, {}).settings || {}).desktopCar !== false; }
 function updateTrayMenu() {
   tray && tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Open DAYLOG', click: () => showWindow() },
     { label: 'Quick add task', click: () => showWindow('quick-add') },
-    { label: 'Desktop car', type: 'checkbox', checked: !!carWin, click: m => { setCar(m.checked); win && win.webContents.send('car-changed', m.checked); } },
     { type: 'separator' },
     { label: 'Quit', click: () => { quitting = true; app.quit(); } }
   ]));
@@ -217,7 +199,6 @@ ipcMain.handle('warn:action', (_e, action) => {
   if (action === 'stop' && win) win.webContents.send('focus-stop');
   return true;
 });
-ipcMain.handle('car:set', (_e, on) => { setCar(!!on); updateTrayMenu(); return !!carWin; });
 ipcMain.handle('notify', (_e, title, body) => { new Notification({ title, body }).show(); return true; });
 ipcMain.handle('open:external', (_e, url) => {
   if (/^(https:|spotify:)/i.test(url)) shell.openExternal(url);
@@ -240,8 +221,6 @@ app.whenReady().then(async () => {
   app.setAppUserModelId('com.lanceagua.daylog');
   createWindow();
   createTray();
-  setCar(carEnabled()); updateTrayMenu();
-  screen.on('display-metrics-changed', () => { if (carWin) { setCar(false); setCar(true); } });
   globalShortcut.register('CommandOrControl+Shift+Space', () => showWindow('quick-add'));
   await loadTracker();
   setInterval(pollActivity, POLL_MS);

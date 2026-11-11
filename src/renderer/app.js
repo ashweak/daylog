@@ -187,22 +187,29 @@ function heatmap(weeks, levelOf, titleOf) {
 }
 
 // GitHub-style contribution graph (53 weeks, month + weekday labels)
+// How many weeks fit: ~12px per week column, between 13 (3 months) and 53 (1 year)
+function ghWeeks() {
+  const w = ($('#main')?.clientWidth || 900) - 140;
+  return Math.max(13, Math.min(53, Math.floor(Math.min(w, 860) / 15)));
+}
 function ghGraph() {
+  lastWeeks = ghWeeks();
   const cal = S.gh?.calendar || {}, lv = S.gh?.levels || {};
-  const end = D(today), start = new Date(end); start.setDate(start.getDate() - 52 * 7 - end.getDay());
+  const weeks = ghWeeks();
+  const end = D(today), start = new Date(end); start.setDate(start.getDate() - (weeks - 1) * 7 - end.getDay());
   const max = Math.max(1, ...Object.values(cal));
   const level = k => k in lv ? lv[k] : !cal[k] ? 0 : Math.min(4, Math.ceil(cal[k] / max * 4));
   const parts = [], months = [];
   let col = 0, lastMonth = -1;
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const k = dayKey(d), dow = d.getDay();
-    if (dow === 0 && d.getMonth() !== lastMonth) { if (col < 52) months.push(`<span class="gm" style="grid-column:${col + 2}">${d.toLocaleDateString(undefined, { month: 'short' })}</span>`); lastMonth = d.getMonth(); }
+    if (dow === 0 && d.getMonth() !== lastMonth) { if (col < weeks - 2) months.push(`<span class="gm" style="grid-column:${col + 2}">${d.toLocaleDateString(undefined, { month: 'short' })}</span>`); lastMonth = d.getMonth(); }
     const n = cal[k] || 0;
     parts.push(`<i class="g${level(k)}" style="grid-column:${col + 2};grid-row:${dow + 2}" title="${n ? n : 'No'} contribution${n === 1 ? '' : 's'} on ${fmtShort(k)}"></i>`);
     if (dow === 6) col++;
   }
   const dl = [[1, 'Mon'], [3, 'Wed'], [5, 'Fri']].map(([r, l]) => `<span class="gd" style="grid-row:${r + 2}">${l}</span>`).join('');
-  return `<div class="ghwrap"><div class="ghg">${months.join('')}${dl}${parts.join('')}</div></div>
+  return `<div class="ghwrap"><div class="ghg" style="--weeks:${weeks}">${months.join('')}${dl}${parts.join('')}</div></div>
     <div class="row note" style="justify-content:space-between;margin-top:6px"><span>${S.gh ? `synced ${ago(new Date(S.gh.fetchedAt).toISOString())} · updates automatically` : ''}</span>
     <span class="glegend">Less <i class="g0"></i><i class="g1"></i><i class="g2"></i><i class="g3"></i><i class="g4"></i> More</span></div>`;
 }
@@ -362,7 +369,7 @@ views.dashboard = async () => {
 
   <div class="sec">
     <div class="row" style="justify-content:space-between"><p class="label">02 — github · ${h(S.settings.ghUser || 'not set')}</p><button class="link" data-act="ghRefresh">${ghBusy ? 'syncing…' : '↻ refresh'}</button></div>
-    ${g ? `<h3 class="ghtitle">${g.total} contributions in the last year</h3>
+    ${g ? `<h3 class="ghtitle">${g.total} contributions in the last year${ghWeeks() < 53 ? ` <span class="note">· showing last ${Math.round(ghWeeks() / 4.35)} months</span>` : ''}</h3>
       <div class="row ghs"><span><b>${g.today}</b> today</span><span><b>${g.week}</b> this week</span><span><b>${g.streak}d</b> streak</span></div>
       ${ghGraph()}`
       : `<div class="empty"><b>${ghBusy ? 'Syncing with GitHub…' : 'GitHub not synced yet'}</b>${ghError ? h(ghError) : S.settings.ghUser ? 'It loads automatically when you are online.' : 'Set your GitHub username in Settings.'}</div>`}
@@ -527,7 +534,7 @@ views.settings = () => {
   <div class="sec">
     <p class="label">02 — tracking & focus</p>
     <label class="row"><button type="button" class="chk ${s.trackActivity ? 'on' : ''}" data-act="toggleTrack"></button> Track active apps in the background</label>
-    <label class="row"><button type="button" class="chk ${s.desktopCar ? 'on' : ''}" data-act="toggleCar"></button> Pixel supercar driving along the bottom of the desktop</label>
+    <label class="row"><button type="button" class="chk ${s.desktopCar ? 'on' : ''}" data-act="toggleCar"></button> Pixel supercar driving along the bottom of DAYLOG</label>
     <label class="row">Focus minutes <input class="in" type="number" min="5" max="120" id="setFocus" value="${s.focusMin}" style="width:90px">
       Break minutes <input class="in" type="number" min="1" max="60" id="setBreak" value="${s.breakMin}" style="width:90px"></label>
     <label class="row">Day ends at <input class="in" type="time" id="setDayEnd" value="${s.dayEnd}"> <span class="note">used for the overload warning</span></label>
@@ -611,7 +618,7 @@ Return JSON: {"tasks":[{"title":string,"time":"HH:MM" or "","est":minutes (15-18
   actNext: () => { actDay = addDays(actDay, 1); },
   actToday: () => { actDay = today; },
   toggleTrack: () => { S.settings.trackActivity = !S.settings.trackActivity; },
-  toggleCar: () => { S.settings.desktopCar = !S.settings.desktopCar; bridge.setCar?.(S.settings.desktopCar); },
+  toggleCar: () => { S.settings.desktopCar = !S.settings.desktopCar; applyCar(); },
   saveSettings: () => {
     const s = S.settings;
     s.apiKey = $('#setKey').value.trim(); s.model = $('#setModel').value.trim() || 'gemini-2.5-flash';
@@ -685,7 +692,11 @@ document.addEventListener('submit', async e => {
   $(`[data-form="${name}"] input`)?.focus();
 });
 
+let lastWeeks = 0, rT;
+window.addEventListener('resize', () => { clearTimeout(rT); rT = setTimeout(() => { if (view === 'dashboard' && ghWeeks() !== lastWeeks) render(); }, 150); });
+
 $('#themeBtn').addEventListener('click', () => { S.settings.theme = S.settings.theme === 'light' ? 'dark' : 'light'; applyTheme(); save(); });
+function applyCar() { S.settings.desktopCar ? window.daylogCar?.start($('#carLane')) : window.daylogCar?.stop(); }
 function applyTheme() {
   const light = S.settings.theme === 'light';
   $('#root').classList.toggle('light', light);
@@ -721,10 +732,10 @@ function tick() {
   S.settings = { ...DEFAULTS.settings, ...(loaded?.settings || {}) };
   delete S.settings.reviewTime;
   applyTheme();
+  applyCar();
   rollover();
   F.left = S.settings.focusMin * 60;
   bridge.on('quick-add', quickAdd);
-  bridge.on('car-changed', on => { S.settings.desktopCar = on; save(); if (view === 'settings') render(); });
   window.addEventListener('focus', () => { if (S.gh && Date.now() - S.gh.fetchedAt > 2 * 60000) refreshGitHub(true); });
   bridge.on('distraction', hit => toast(`Focus: "${hit}" detected`));
   bridge.on('focus-stop', () => { if (F.running) focusToggle(); toast('Focus session paused'); if (view === 'focus') render(); });
