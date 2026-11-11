@@ -33,4 +33,4 @@ AI features: paste a free Gemini API key from https://aistudio.google.com into *
 `Ctrl+Shift+Space` quick add (global) · `N` new task · `1`–`9` switch views
 
 ## Stack
-Electron · vanilla JS · `get-windows` (active-window tracking) · Gemini API · GitHub GraphQL/REST API
+Electron · vanilla JS · PowerShell foreground-window helper (activity tracking, no native modules) · Gemini API · GitHub GraphQL/REST API

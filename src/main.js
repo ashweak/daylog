@@ -26,16 +26,61 @@ const dayKey = (d = new Date()) => new Date(d - d.getTimezoneOffset() * 60000).t
 let activity = readJSON(ACT_FILE, {}); // { 'YYYY-MM-DD': { apps: { name: seconds }, idle: seconds } }
 
 // ---------- activity tracking ----------
-let activeWindow = null;
-async function loadTracker() {
-  try { ({ activeWindow } = await import('get-windows')); }
-  catch (e) { console.warn('Activity tracking unavailable:', e.message); }
+// Windows: a small PowerShell helper reports the foreground window every 5s (no native modules needed).
+const { spawn } = require('child_process');
+let fg = null, tracker = null, trackerFails = 0;
+const PS_TRACKER = String.raw`
+$ErrorActionPreference = 'SilentlyContinue'
+Add-Type @"
+using System; using System.Runtime.InteropServices; using System.Text;
+public class DaylogWin {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
 }
+"@
+$names = @{}
+while ($true) {
+  $h = [DaylogWin]::GetForegroundWindow(); $procId = 0
+  [void][DaylogWin]::GetWindowThreadProcessId($h, [ref]$procId)
+  $sb = New-Object System.Text.StringBuilder 512; [void][DaylogWin]::GetWindowText($h, $sb, 512)
+  if (-not $names.ContainsKey($procId)) {
+    $n = ''
+    try { $p = Get-Process -Id $procId; $n = $p.MainModule.FileVersionInfo.FileDescription; if (-not $n) { $n = $p.ProcessName } } catch { try { $n = (Get-Process -Id $procId).ProcessName } catch {} }
+    $names[$procId] = $n
+  }
+  [Console]::Out.WriteLine((@{ name = $names[$procId]; title = $sb.ToString() } | ConvertTo-Json -Compress))
+  [Console]::Out.Flush()
+  Start-Sleep -Seconds 5
+}`;
+function startTracker() {
+  if (process.platform !== 'win32' || tracker) return;
+  const encoded = Buffer.from(PS_TRACKER, 'utf16le').toString('base64');
+  tracker = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], { windowsHide: true });
+  let buf = '';
+  tracker.stdout.on('data', d => {
+    buf += d.toString('utf8');
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      try { const j = JSON.parse(line); fg = { name: j.name || 'Unknown', title: j.title || '', at: Date.now() }; trackerFails = 0; } catch {}
+    }
+  });
+  tracker.on('exit', () => {
+    tracker = null;
+    if (!quitting && trackerFails++ < 5) setTimeout(startTracker, 5000 * trackerFails);
+  });
+}
+async function activeWindow() {
+  if (!fg || Date.now() - fg.at > 15000) return null;
+  return { owner: { name: fg.name }, title: fg.title };
+}
+async function loadTracker() { startTracker(); }
 
 async function pollActivity() {
   const data = readJSON(DATA_FILE, {});
   const s = data.settings || {};
-  if (s.trackActivity === false || !activeWindow) return;
+  if (s.trackActivity === false) return;
   const day = (activity[dayKey()] ||= { apps: {}, idle: 0 });
   const secs = POLL_MS / 1000;
   if (powerMonitor.getSystemIdleTime() >= IDLE_SECONDS) { day.idle += secs; return; }
@@ -305,7 +350,7 @@ app.whenReady().then(async () => {
   setInterval(() => runBackup(false), 3 * 3600000);
 });
 
-app.on('before-quit', () => { quitting = true; writeJSON(ACT_FILE, activity); });
+app.on('before-quit', () => { quitting = true; writeJSON(ACT_FILE, activity); if (tracker) tracker.kill(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
 app.on('window-all-closed', e => e.preventDefault());
 

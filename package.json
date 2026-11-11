@@ -32,9 +32,7 @@
     },
     "directories": {
       "output": "dist"
-    }
-  },
-  "optionalDependencies": {
-    "get-windows": "^9.2.0"
+    },
+    "npmRebuild": false
   }
 }
